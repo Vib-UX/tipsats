@@ -1,0 +1,15 @@
+{
+  "name": "tipsats-wdk-mcp",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "WDK MCP server for TipSats — exposes Bitcoin wallet tools to OpenClaw agents",
+  "scripts": {
+    "start": "node server.js",
+    "setup": "node setup.js"
+  },
+  "dependencies": {
+    "@tetherto/wdk-mcp-toolkit": "latest",
+    "@tetherto/wdk-wallet-btc": "latest"
+  }
+}

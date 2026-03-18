@@ -1,0 +1,48 @@
+{
+  "agents": {
+    "defaults": {
+      "workspace": ".",
+      "model": "anthropic/claude-sonnet-4-5",
+      "subagents": {
+        "maxSpawnDepth": 2,
+        "maxChildrenPerAgent": 4,
+        "maxConcurrent": 4,
+        "runTimeoutSeconds": 600
+      }
+    },
+    "list": [
+      {
+        "id": "tipsats",
+        "name": "TipSats",
+        "default": true,
+        "workspace": "."
+      }
+    ]
+  },
+  "browser": {
+    "enabled": true,
+    "defaultProfile": "openclaw",
+    "headless": false,
+    "profiles": {
+      "openclaw": {
+        "cdpPort": 18800,
+        "color": "#f7931a"
+      }
+    }
+  },
+  "mcpServers": {
+    "wdk": {
+      "command": "node",
+      "args": ["../wdk-mcp-server/server.js"],
+      "env": {
+        "WDK_SEED": "${WDK_SEED}",
+        "WDK_NETWORK": "${WDK_NETWORK:-testnet}",
+        "WDK_ELECTRUM_HOST": "${WDK_ELECTRUM_HOST:-electrum.blockstream.info}",
+        "WDK_ELECTRUM_PORT": "${WDK_ELECTRUM_PORT:-50001}"
+      }
+    },
+    "wdk-docs": {
+      "url": "https://docs.wallet.tether.io/~gitbook/mcp"
+    }
+  }
+}
