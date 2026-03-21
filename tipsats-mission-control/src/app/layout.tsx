@@ -14,9 +14,9 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "TipSats — Orchestrated Sats Tipping for Rumble",
+  title: "TipSats — Agentic Lightning Tipping for Rumble",
   description:
-    "Watch, Agent thinks, Sats tip. Automated tipping for Rumble creators through Rumble Wallet and Tether WDK.",
+    "An autonomous agent tips Rumble creators with Lightning sats via Tether Spark wallet. Self-custodial, fast, powered by Boltz Exchange.",
 };
 
 export default function RootLayout({
@@ -43,7 +43,7 @@ export default function RootLayout({
                 href="/control"
                 className="rounded-lg bg-accent px-4 py-1.5 font-medium text-black transition-colors hover:bg-accent-dim"
               >
-                Mission Control
+                Launch Agent
               </Link>
             </div>
           </div>
