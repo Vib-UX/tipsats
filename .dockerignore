@@ -1,0 +1,12 @@
+# Repo-root build context — keep image small
+.git
+.github
+**/.next
+**/node_modules
+**/dist
+**/.env
+**/.env.*
+!tipsats-backend/.env.example
+**/*.log
+**/.chrome-profile
+tipsats-mission-control

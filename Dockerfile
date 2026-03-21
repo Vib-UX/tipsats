@@ -1,3 +1,8 @@
+# Build from repository root (required so COPY can see test-harness-twdk-spark-ln):
+#   docker build -t tipsats-backend .
+#
+# Railway: set Root Directory to the repo root (empty or "/"), not tipsats-backend/
+
 FROM node:20-slim
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
