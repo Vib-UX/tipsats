@@ -1,0 +1,16 @@
+{
+  "name": "tipsats-test-harness-ln",
+  "version": "1.0.0",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "test": "tsx run.ts",
+    "test:wet": "DRY_RUN=false tsx run.ts"
+  },
+  "dependencies": {
+    "@getalby/sdk": "latest",
+    "dotenv": "^16.4.7",
+    "playwright": "latest",
+    "tsx": "^4.19.0"
+  }
+}

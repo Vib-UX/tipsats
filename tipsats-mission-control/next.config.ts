@@ -1,7 +1,12 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  /* config options here */
+  serverExternalPackages: [
+    "@tetherto/wdk-wallet-spark",
+    "@buildonspark/spark-sdk",
+    "@buildonspark/bare",
+    "sodium-native",
+  ],
 };
 
 export default nextConfig;
