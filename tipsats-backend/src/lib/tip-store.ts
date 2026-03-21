@@ -1,4 +1,4 @@
-import type { TipSession, TipStatus, PipelineStep, TxDetails, Rule } from "./types";
+import type { TipSession, TipStatus, PipelineStep, TxDetails, Rule } from "./types.js";
 
 const tips = new Map<string, TipSession>();
 

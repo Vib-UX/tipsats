@@ -10,12 +10,14 @@ export async function launchBrowser(): Promise<{
   context: BrowserContext;
   page: Page;
 }> {
+  const isHeadless = process.env.HEADLESS === "true";
   const context = await chromium.launchPersistentContext(PROFILE_DIR, {
-    headless: false,
+    headless: isHeadless,
     viewport: { width: 1280, height: 800 },
     args: [
       "--disable-blink-features=AutomationControlled",
       "--no-sandbox",
+      "--disable-dev-shm-usage",
     ],
   });
 

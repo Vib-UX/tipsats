@@ -4,6 +4,8 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { QRCodeSVG } from "qrcode.react";
 import { PRESETS, DEFAULT_RULE, type Rule, type TipSession } from "@/lib/types";
 
+const API = process.env.NEXT_PUBLIC_BACKEND_URL || "";
+
 type Phase = "config" | "funding" | "running" | "complete";
 
 export default function ControlPage() {
@@ -29,7 +31,7 @@ export default function ControlPage() {
     let cancelled = false;
     async function fetchWallet() {
       try {
-        const res = await fetch("/api/wallet");
+        const res = await fetch(`${API}/api/wallet`);
         if (!res.ok) return;
         const data = await res.json();
         if (!cancelled) {
@@ -54,7 +56,7 @@ export default function ControlPage() {
   const poll = useCallback(async () => {
     if (!tipId) return;
     try {
-      const res = await fetch(`/api/tip/${tipId}`);
+      const res = await fetch(`${API}/api/tip/${tipId}`);
       if (!res.ok) return;
       const data: TipSession = await res.json();
       setSession(data);
@@ -62,7 +64,7 @@ export default function ControlPage() {
       if (data.status === "funded" && !executedRef.current) {
         executedRef.current = true;
         setPhase("running");
-        fetch(`/api/tip/${tipId}`, { method: "POST" }).catch(() => {});
+        fetch(`${API}/api/tip/${tipId}/execute`, { method: "POST" }).catch(() => {});
       }
       if (data.status === "agent_running" && phase !== "running") {
         setPhase("running");
@@ -73,7 +75,7 @@ export default function ControlPage() {
           clearInterval(pollRef.current);
           pollRef.current = null;
         }
-        fetch("/api/wallet").then(r => r.json()).then(w => {
+        fetch(`${API}/api/wallet`).then(r => r.json()).then(w => {
           setWalletBalance(w.balance);
         }).catch(() => {});
       }
@@ -94,7 +96,7 @@ export default function ControlPage() {
     setError(null);
     executedRef.current = false;
     try {
-      const res = await fetch("/api/tip", {
+      const res = await fetch(`${API}/api/tip`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

@@ -1,15 +1,17 @@
 import { exec } from "child_process";
 import path from "path";
-import type { PipelineStep, TxDetails } from "./types";
+import { fileURLToPath } from "url";
+import type { PipelineStep, TxDetails } from "./types.js";
 import {
   updateTipStatus,
   updateTipSteps,
   updateTipTxDetails,
   setTipError,
-} from "./tip-store";
-import { payInvoice, quotePayInvoice } from "./spark";
+} from "./tip-store.js";
+import { payInvoice, quotePayInvoice } from "./spark.js";
 
-const HARNESS_DIR = path.resolve(process.cwd(), "../test-harness-twdk-spark-ln");
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const HARNESS_DIR = path.resolve(__dirname, "../../../test-harness-twdk-spark-ln");
 
 const HARNESS_STEP_PATTERNS: { pattern: RegExp; name: string }[] = [
   { pattern: /Launching browser/, name: "Launching browser" },
@@ -77,11 +79,14 @@ export function runPipeline(tipId: string, tipAmountSats: number): void {
   updateTipStatus(tipId, "agent_running");
   running.add(tipId);
 
+  const isHeadless = process.env.HEADLESS === "true";
+
   const { WDK_SEED: _omit, ...parentEnv } = process.env;
   const env = {
     ...parentEnv,
     DRY_RUN: "false",
     KEEP_BROWSER_OPEN: "true",
+    HEADLESS: isHeadless ? "true" : "false",
     RUMBLE_USER: "crypto_vib",
     TIP_AMOUNT_SATS: String(tipAmountSats),
     EXPECTED_ADDRESS: "0xf6ae15c6f613638be32f934d986b45522e3f546f",
