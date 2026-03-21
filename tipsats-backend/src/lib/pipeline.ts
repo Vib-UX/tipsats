@@ -80,6 +80,13 @@ export function runPipeline(tipId: string, tipAmountSats: number): void {
   running.add(tipId);
 
   const isHeadless = process.env.HEADLESS === "true";
+  /** Rumble uses Cloudflare; datacenter headless cannot pass it — skip to Boltz using EXPECTED_ADDRESS. */
+  const skipRumble =
+    process.env.SKIP_RUMBLE !== undefined
+      ? process.env.SKIP_RUMBLE
+      : isHeadless
+        ? "true"
+        : "false";
 
   const { WDK_SEED: _omit, ...parentEnv } = process.env;
   const env = {
@@ -87,6 +94,7 @@ export function runPipeline(tipId: string, tipAmountSats: number): void {
     DRY_RUN: "false",
     KEEP_BROWSER_OPEN: "true",
     HEADLESS: isHeadless ? "true" : "false",
+    SKIP_RUMBLE: skipRumble,
     RUMBLE_USER: "crypto_vib",
     TIP_AMOUNT_SATS: String(tipAmountSats),
     EXPECTED_ADDRESS: "0xf6ae15c6f613638be32f934d986b45522e3f546f",

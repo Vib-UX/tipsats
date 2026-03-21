@@ -10,6 +10,8 @@ const TIP_AMOUNT_SATS = parseInt(process.env.TIP_AMOUNT_SATS || "0", 10);
 const TIP_AMOUNT_USD = parseFloat(process.env.TIP_AMOUNT_USD || "1.00");
 const WDK_SEED = process.env.WDK_SEED || "";
 const EXPECTED_ADDRESS = process.env.EXPECTED_ADDRESS || "";
+/** On Railway/headless, Rumble's Cloudflare cannot be solved — use EXPECTED_ADDRESS only. */
+const SKIP_RUMBLE = process.env.SKIP_RUMBLE === "true";
 
 function log(msg: string) {
   console.log(`[TipSats-Spark] ${msg}`);
@@ -53,17 +55,34 @@ async function main() {
 
   try {
     // ── Step 3: Rumble flow → extract creator address ──
-    logStep(3, `Extracting creator address from Rumble (${RUMBLE_USER})...`);
+    let creatorAddress: string;
 
-    const creatorAddress = await extractCreatorAddress(
-      page,
-      RUMBLE_USER,
-      EXPECTED_ADDRESS,
-      log
-    );
+    if (SKIP_RUMBLE) {
+      if (!EXPECTED_ADDRESS || !/^0x[a-fA-F0-9]{40}$/.test(EXPECTED_ADDRESS.trim())) {
+        throw new Error(
+          "SKIP_RUMBLE requires EXPECTED_ADDRESS=0x... (valid Polygon creator address)"
+        );
+      }
+      logStep(
+        3,
+        `Extracting creator address — skipping Rumble UI (SKIP_RUMBLE), using EXPECTED_ADDRESS`
+      );
+      creatorAddress = EXPECTED_ADDRESS.trim();
+      log(`  Creator address: ${creatorAddress}`);
+      log(`  Creator: ${RUMBLE_USER} (demo label; address from env)`);
+    } else {
+      logStep(3, `Extracting creator address from Rumble (${RUMBLE_USER})...`);
 
-    log(`  Creator: ${RUMBLE_USER}`);
-    log(`  Address: ${creatorAddress}`);
+      creatorAddress = await extractCreatorAddress(
+        page,
+        RUMBLE_USER,
+        EXPECTED_ADDRESS,
+        log
+      );
+
+      log(`  Creator: ${RUMBLE_USER}`);
+      log(`  Address: ${creatorAddress}`);
+    }
 
     // ── Step 4: Boltz swap → Lightning invoice ──
     const swapSats = TIP_AMOUNT_SATS > 0 ? TIP_AMOUNT_SATS : Math.round(TIP_AMOUNT_USD * 1500);
