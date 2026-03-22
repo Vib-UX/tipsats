@@ -3,7 +3,7 @@ import { readFileSync } from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 import { launchBrowser } from "./browser.js";
-import { extractCreatorAddress } from "./rumble.js";
+import { extractCreatorAddress, extractTwoChannelsFromSearchDemo } from "./rumble.js";
 import { createBoltzSwap } from "./boltz.js";
 import { initSpark, payInvoice, quotePayInvoice } from "./lightning.js";
 
@@ -35,6 +35,14 @@ const EXPECTED_ADDRESS = process.env.EXPECTED_ADDRESS || "";
 const BOLTZ_RECIPIENT = process.env.BOLTZ_RECIPIENT || "";
 /** On Railway/headless, Rumble's Cloudflare cannot be solved — use EXPECTED_ADDRESS only. */
 const SKIP_RUMBLE = process.env.SKIP_RUMBLE === "true";
+/** Playwright demo: search → Channels → 1st channel (tip + URL) → back → 2nd channel. */
+const RUMBLE_SEARCH_DEMO = process.env.RUMBLE_SEARCH_DEMO === "true";
+const RUMBLE_SEARCH_QUERY = process.env.RUMBLE_SEARCH_QUERY || "bitcoin";
+/** Comma-separated channel slugs after /c/ — default Bitcoin Ben then Simply Bitcoin */
+const RUMBLE_DEMO_CHANNEL_SLUGS = (process.env.RUMBLE_DEMO_CHANNEL_SLUGS || "BITCOINBEN,SimplyBitcoin")
+  .split(",")
+  .map((s) => s.trim())
+  .filter(Boolean);
 
 function log(msg: string) {
   console.log(`[TipSats-Spark] ${msg}`);
@@ -79,6 +87,7 @@ async function main() {
   try {
     // ── Step 3: Rumble flow → extract creator address ──
     let creatorAddress: string;
+    let creatorLabel = RUMBLE_USER;
 
     if (SKIP_RUMBLE) {
       if (!EXPECTED_ADDRESS || !/^0x[a-fA-F0-9]{40}$/.test(EXPECTED_ADDRESS.trim())) {
@@ -93,6 +102,28 @@ async function main() {
       creatorAddress = EXPECTED_ADDRESS.trim();
       log(`  Creator address: ${creatorAddress}`);
       log(`  Creator: ${RUMBLE_USER} (demo label; address from env)`);
+    } else if (RUMBLE_SEARCH_DEMO) {
+      logStep(
+        3,
+        `Extracting creator address — search demo: "${RUMBLE_SEARCH_QUERY}" → channels → 2 profiles → tip addresses`
+      );
+      const { channels, primaryAddress } = await extractTwoChannelsFromSearchDemo(
+        page,
+        RUMBLE_SEARCH_QUERY,
+        EXPECTED_ADDRESS,
+        log,
+        RUMBLE_DEMO_CHANNEL_SLUGS
+      );
+      creatorAddress = primaryAddress;
+      const slug0 = channels[0]?.channelUrl.match(/\/c\/([^/?]+)/)?.[1];
+      creatorLabel = slug0 ?? "search-demo";
+      log(`  Primary creator label: ${creatorLabel}`);
+      log(`  Channel 1 URL: ${channels[0]?.channelUrl}`);
+      log(`  Channel 1 tip:   ${channels[0]?.tipAddress}`);
+      log(`  Channel 2 URL: ${channels[1]?.channelUrl}`);
+      log(`  Channel 2 tip:   ${channels[1]?.tipAddress}`);
+      log(`Creator: ${creatorLabel}`);
+      log(`Address: ${creatorAddress}`);
     } else {
       logStep(3, `Extracting creator address from Rumble (${RUMBLE_USER})...`);
 
@@ -136,7 +167,7 @@ async function main() {
     console.log(`│  Swap ID:  ${swapId}`);
     console.log(`│  Amount:   ~${satsAmount} sats (~${usdtAmount} USDT)`);
     console.log(`│  To:       ${boltzRecipient} (Polygon)`);
-    console.log(`│  Creator:  ${RUMBLE_USER}`);
+    console.log(`│  Creator:  ${creatorLabel}`);
     console.log("├─────────────────────────────────────────────────────┤");
     console.log(`│  ${bolt11}`);
     console.log("└─────────────────────────────────────────────────────┘");
@@ -177,7 +208,7 @@ async function main() {
     console.log("\n╔══════════════════════════════════════════════════════╗");
     console.log("║     Run Complete                                     ║");
     console.log("╚══════════════════════════════════════════════════════════╝");
-    log(`Creator:    ${RUMBLE_USER}`);
+    log(`Creator:    ${creatorLabel}`);
     log(`Address:    ${creatorAddress}`);
     log(`Amount:     ${satsAmount} sats (~${usdtAmount} USDT)`);
     log(`Swap ID:    ${swapId}`);

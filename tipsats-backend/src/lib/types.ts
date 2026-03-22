@@ -1,5 +1,9 @@
 export interface Rule {
   minViews: number;
+  /** 0 = no minimum subscriber filter */
+  minSubscribers: number;
+  /** 0 = no maximum (unbounded) */
+  maxSubscribers: number;
   channelKeywords: string[];
   liveOnly: boolean;
   satsPerHit: number;
@@ -8,6 +12,9 @@ export interface Rule {
 
 export const DEFAULT_RULE: Rule = {
   minViews: 5000,
+  /** Playwright / demo default: 5k–35k subscriber band */
+  minSubscribers: 5000,
+  maxSubscribers: 35000,
   channelKeywords: [],
   liveOnly: false,
   satsPerHit: 100,
@@ -24,6 +31,8 @@ export const PRESETS: Record<
     icon: "₿",
     rule: {
       minViews: 10000,
+      minSubscribers: 0,
+      maxSubscribers: 0,
       channelKeywords: ["bitcoin", "crypto", "tech", "btc", "lightning"],
       liveOnly: false,
       satsPerHit: 100,
@@ -36,6 +45,8 @@ export const PRESETS: Record<
     icon: "🎮",
     rule: {
       minViews: 2000,
+      minSubscribers: 0,
+      maxSubscribers: 0,
       channelKeywords: ["gaming", "game", "stream", "esports"],
       liveOnly: true,
       satsPerHit: 50,
@@ -48,6 +59,8 @@ export const PRESETS: Record<
     icon: "🚀",
     rule: {
       minViews: 1000,
+      minSubscribers: 0,
+      maxSubscribers: 0,
       channelKeywords: [],
       liveOnly: false,
       satsPerHit: 75,
@@ -79,8 +92,32 @@ export interface TxDetails {
   amountUsdt: string;
   boltzUrl: string;
   batchTxHash?: string;
+  /** Invoice / funded amount in sats (same as session budget for this tip) */
+  fundedSats?: string;
+  /** USDT balance on agent when batch runs (Boltz proceeds landed) */
+  agentUsdtReceived?: string;
+  /** Paymaster fee + buffer — not included in creator split */
+  reservedForGasUsdt?: string;
+  /** Total USDT sent to creators (65/35 of this pool, after gas reserve) */
+  distributedUsdt?: string;
+  /** USDT amount attributed to this tip (Boltz quote); split uses min(agent, this), not full wallet */
+  tipSplitCapUsdt?: string;
   /** Per-recipient USDT amounts when batch split is used */
-  payoutRecipients?: { address: string; amountUsdt: string }[];
+  payoutRecipients?: {
+    address: string;
+    amountUsdt: string;
+    percent?: number;
+    label?: string;
+    channelUrl?: string;
+  }[];
+  /** Published kind-1 note id (hex) when http-nostr succeeds */
+  nostrEventId?: string;
+  /** Relay used for publish (from bridge response or request) */
+  nostrRelayUrl?: string;
+  /** Open in a Nostr web client (default njump.me; override with NOSTR_NOTE_URL_TEMPLATE) */
+  nostrShareUrl?: string;
+  /** Set when publish was attempted but failed */
+  nostrPublishError?: string;
 }
 
 export interface TipSession {

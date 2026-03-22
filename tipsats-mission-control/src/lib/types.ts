@@ -1,5 +1,9 @@
 export interface Rule {
   minViews: number;
+  /** 0 = no minimum subscriber filter */
+  minSubscribers: number;
+  /** 0 = no maximum (unbounded) */
+  maxSubscribers: number;
   channelKeywords: string[];
   liveOnly: boolean;
   satsPerHit: number;
@@ -8,6 +12,9 @@ export interface Rule {
 
 export const DEFAULT_RULE: Rule = {
   minViews: 5000,
+  /** Playwright / demo default: 5k–35k subscriber band */
+  minSubscribers: 5000,
+  maxSubscribers: 35000,
   channelKeywords: [],
   liveOnly: false,
   satsPerHit: 100,
@@ -24,6 +31,8 @@ export const PRESETS: Record<
     icon: "₿",
     rule: {
       minViews: 10000,
+      minSubscribers: 0,
+      maxSubscribers: 0,
       channelKeywords: ["bitcoin", "crypto", "tech", "btc", "lightning"],
       liveOnly: false,
       satsPerHit: 100,
@@ -36,6 +45,8 @@ export const PRESETS: Record<
     icon: "🎮",
     rule: {
       minViews: 2000,
+      minSubscribers: 0,
+      maxSubscribers: 0,
       channelKeywords: ["gaming", "game", "stream", "esports"],
       liveOnly: true,
       satsPerHit: 50,
@@ -48,6 +59,8 @@ export const PRESETS: Record<
     icon: "🚀",
     rule: {
       minViews: 1000,
+      minSubscribers: 0,
+      maxSubscribers: 0,
       channelKeywords: [],
       liveOnly: false,
       satsPerHit: 75,
@@ -79,7 +92,22 @@ export interface TxDetails {
   amountUsdt: string;
   boltzUrl: string;
   batchTxHash?: string;
-  payoutRecipients?: { address: string; amountUsdt: string }[];
+  fundedSats?: string;
+  agentUsdtReceived?: string;
+  reservedForGasUsdt?: string;
+  distributedUsdt?: string;
+  tipSplitCapUsdt?: string;
+  payoutRecipients?: {
+    address: string;
+    amountUsdt: string;
+    percent?: number;
+    label?: string;
+    channelUrl?: string;
+  }[];
+  nostrEventId?: string;
+  nostrRelayUrl?: string;
+  nostrShareUrl?: string;
+  nostrPublishError?: string;
 }
 
 export interface TipSession {

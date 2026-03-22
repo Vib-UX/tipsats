@@ -7,6 +7,43 @@ const PIMLICO_PAYMASTER = "0x777777777777AeC03fd955926DbF81597e66834C";
 
 type Evm4337Account = Awaited<ReturnType<WalletManagerEvmErc4337["getAccount"]>>;
 
+/** WDK returns a user operation hash; explorers need the executed L2 transaction hash. */
+const RECEIPT_POLL_MS = 2000;
+const RECEIPT_MAX_WAIT_MS = 10 * 60 * 1000;
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function txHashFromReceipt(receipt: unknown): string {
+  const r = receipt as { hash?: string; transactionHash?: string };
+  const h = r.hash ?? r.transactionHash;
+  if (!h || typeof h !== "string") {
+    throw new Error("Transaction receipt missing on-chain transaction hash");
+  }
+  return h;
+}
+
+/**
+ * Poll until the user op is included; returns the Polygon transaction hash for block explorers.
+ */
+async function waitForOnChainTxHash(
+  account: Evm4337Account,
+  userOpHash: string,
+): Promise<string> {
+  const start = Date.now();
+  while (Date.now() - start < RECEIPT_MAX_WAIT_MS) {
+    const receipt = await account.getTransactionReceipt(userOpHash);
+    if (receipt) {
+      return txHashFromReceipt(receipt);
+    }
+    await sleep(RECEIPT_POLL_MS);
+  }
+  throw new Error(
+    `Timed out after ${RECEIPT_MAX_WAIT_MS / 1000}s waiting for on-chain tx (userOpHash=${userOpHash})`,
+  );
+}
+
 let walletInstance: WalletManagerEvmErc4337 | null = null;
 let accountInstance: Evm4337Account | null = null;
 let initPromise: Promise<void> | null = null;
@@ -80,7 +117,10 @@ export interface TransferRecipient {
 }
 
 export interface BatchResult {
+  /** On-chain Polygon transaction hash (safe for Blockscout / `tx/` URLs). */
   hash: string;
+  /** ERC-4337 user operation hash returned by the bundler (before resolution). */
+  userOpHash: string;
   fee: string;
   recipients: number;
 }
@@ -102,8 +142,12 @@ export async function batchTransferUsdt(recipients: TransferRecipient[]): Promis
       recipient: r.address,
       amount,
     });
+    const userOpHash = result.hash;
+    const onChainHash = await waitForOnChainTxHash(account, userOpHash);
+    console.log(`[TipSats-4337] Resolved on-chain tx: ${onChainHash} (userOp: ${userOpHash})`);
     return {
-      hash: result.hash,
+      hash: onChainHash,
+      userOpHash,
       fee: result.fee?.toString() ?? "0",
       recipients: 1,
     };
@@ -124,9 +168,13 @@ export async function batchTransferUsdt(recipients: TransferRecipient[]): Promis
   }
 
   const result = await (account as any).sendTransaction(txs);
+  const userOpHash = result.hash as string;
+  const onChainHash = await waitForOnChainTxHash(account, userOpHash);
+  console.log(`[TipSats-4337] Resolved on-chain tx: ${onChainHash} (userOp: ${userOpHash})`);
 
   return {
-    hash: result.hash,
+    hash: onChainHash,
+    userOpHash,
     fee: result.fee?.toString() ?? "0",
     recipients: recipients.length,
   };

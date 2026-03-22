@@ -5,7 +5,8 @@
   "private": true,
   "scripts": {
     "test": "tsx run.ts",
-    "test:wet": "DRY_RUN=false tsx run.ts"
+    "test:wet": "DRY_RUN=false tsx run.ts",
+    "demo:search": "RUMBLE_SEARCH_DEMO=true DRY_RUN=true HEADLESS=false tsx run.ts"
   },
   "dependencies": {
     "@buildonspark/spark-sdk": "^0.7.1",

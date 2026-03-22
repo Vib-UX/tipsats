@@ -1,13 +1,38 @@
 import { Router, type Request, type Response } from "express";
 import { generateTipId, createTip, getTip, updateTipStatus, updateTipBalance } from "../lib/tip-store.js";
+import { DEFAULT_RULE, type Rule } from "../lib/types.js";
 import { createInvoice, getBalance, checkInvoiceStatus } from "../lib/spark.js";
 import { runPipeline, isRunning } from "../lib/pipeline.js";
 
 const router = Router();
 
+function paramId(p: string | string[] | undefined): string {
+  if (typeof p === "string") return p;
+  if (Array.isArray(p) && p[0]) return p[0];
+  return "";
+}
+
+function normalizeRule(r: unknown): Rule {
+  if (!r || typeof r !== "object") return { ...DEFAULT_RULE };
+  const x = r as Record<string, unknown>;
+  return {
+    ...DEFAULT_RULE,
+    minViews: typeof x.minViews === "number" ? x.minViews : DEFAULT_RULE.minViews,
+    minSubscribers: typeof x.minSubscribers === "number" ? x.minSubscribers : DEFAULT_RULE.minSubscribers,
+    maxSubscribers: typeof x.maxSubscribers === "number" ? x.maxSubscribers : DEFAULT_RULE.maxSubscribers,
+    channelKeywords: Array.isArray(x.channelKeywords)
+      ? (x.channelKeywords as unknown[]).filter((k): k is string => typeof k === "string")
+      : DEFAULT_RULE.channelKeywords,
+    liveOnly: typeof x.liveOnly === "boolean" ? x.liveOnly : DEFAULT_RULE.liveOnly,
+    satsPerHit: typeof x.satsPerHit === "number" ? x.satsPerHit : DEFAULT_RULE.satsPerHit,
+    boostOnCampaign: typeof x.boostOnCampaign === "number" ? x.boostOnCampaign : DEFAULT_RULE.boostOnCampaign,
+  };
+}
+
 router.post("/", async (req: Request, res: Response) => {
   try {
-    const { presets = [], rules = [], budgetSats = 2000 } = req.body;
+    const { presets = [], rules: rawRules = [], budgetSats = 2000 } = req.body;
+    const rules = Array.isArray(rawRules) ? rawRules.map(normalizeRule) : [];
 
     if (budgetSats < 500 || budgetSats > 500_000) {
       res.status(400).json({ error: "Budget must be between 500 and 500,000 sats" });
@@ -45,7 +70,7 @@ router.post("/", async (req: Request, res: Response) => {
 });
 
 router.get("/:id", async (req: Request, res: Response) => {
-  const { id } = req.params;
+  const id = paramId(req.params.id);
   const tip = getTip(id);
 
   if (!tip) {
@@ -70,7 +95,7 @@ router.get("/:id", async (req: Request, res: Response) => {
 });
 
 router.post("/:id/execute", async (req: Request, res: Response) => {
-  const { id } = req.params;
+  const id = paramId(req.params.id);
   const tip = getTip(id);
 
   if (!tip) {

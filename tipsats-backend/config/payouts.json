@@ -1,6 +1,19 @@
 {
   "payoutAddresses": [
-    "0xf6ae15c6f613638be32f934d986b45522e3f546f",
-    "0x7F31698C1dA9E55AE61B81fD7B355459A57026D0"
+    "0x7F31698C1dA9E55AE61B81fD7B355459A57026D0",
+    "0xf6ae15c6f613638be32f934d986b45522e3f546f"
+  ],
+  "splitWeights": [65, 35],
+  "channels": [
+    {
+      "label": "Simply Bitcoin",
+      "url": "https://rumble.com/c/SimplyBitcoin",
+      "description": "Bitcoin news and commentary"
+    },
+    {
+      "label": "Bitcoin Ben",
+      "url": "https://rumble.com/c/BITCOINBEN",
+      "description": "Crypto and market coverage"
+    }
   ]
 }

@@ -3,10 +3,16 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { QRCodeSVG } from "qrcode.react";
 import { PRESETS, DEFAULT_RULE, type Rule, type TipSession } from "@/lib/types";
+import { mapPipelineStepDisplay } from "@/lib/rumble-pipeline-display";
 
 const API = process.env.NEXT_PUBLIC_BACKEND_URL || "";
 
 type Phase = "config" | "funding" | "running" | "complete";
+
+/** ~1500 sats ≈ $1 USDT (same heuristic as budget slider) */
+function satsToUsd(sats: number): string {
+  return (sats / 1500).toFixed(2);
+}
 
 export default function ControlPage() {
   const [budgetSats, setBudgetSats] = useState(2000);
@@ -159,7 +165,8 @@ export default function ControlPage() {
           <span className="text-accent">⚡</span> Mission Control
         </h1>
         <p className="mt-2 text-muted">
-          Configure the TipSats agent, fund its Lightning wallet, and watch it tip creators autonomously.
+          Fund the agent, then watch the pipeline: discover channels that fit your engagement rules, open
+          profiles, and tip creators.
         </p>
       </div>
 
@@ -199,7 +206,14 @@ export default function ControlPage() {
         </div>
         <div className="h-4 w-px bg-border" />
         <span className="font-mono text-sm font-bold text-accent">
-          {walletBalance !== null ? `${walletBalance.toLocaleString()} sats` : "..."}
+          {walletBalance !== null ? (
+            <>
+              {walletBalance.toLocaleString()} sats
+              <span className="ml-2 font-normal text-muted">(~${satsToUsd(walletBalance)} USD)</span>
+            </>
+          ) : (
+            "..."
+          )}
         </span>
         {walletAddress && (
           <>
@@ -252,8 +266,8 @@ export default function ControlPage() {
             <div className="rounded-2xl border border-accent/20 bg-accent/5 p-5 text-sm">
               <p className="leading-relaxed text-muted">
                 <strong className="text-accent">How it works:</strong> You&apos;ll pay a Lightning invoice
-                to fund the agent&apos;s Spark wallet. The agent then uses those sats to tip a Rumble creator
-                via a Boltz atomic swap (LN sats → USDT on Polygon).
+                to fund the agent&apos;s Spark wallet. The agent then uses those sats to tip creators on
+                Rumble via a Boltz atomic swap (LN sats → USDT on Polygon).
               </p>
             </div>
           </div>
@@ -303,8 +317,9 @@ export default function ControlPage() {
                       <label className="mb-1 block text-xs font-medium text-muted">Min Views</label>
                       <input
                         type="number"
+                        min={0}
                         value={customRule.minViews}
-                        onChange={(e) => setCustomRule({ ...customRule, minViews: Number(e.target.value) })}
+                        onChange={(e) => setCustomRule({ ...customRule, minViews: Math.max(0, Number(e.target.value) || 0) })}
                         className="w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-foreground focus:border-accent focus:outline-none"
                       />
                     </div>
@@ -312,10 +327,45 @@ export default function ControlPage() {
                       <label className="mb-1 block text-xs font-medium text-muted">Sats Per Hit</label>
                       <input
                         type="number"
+                        min={0}
                         value={customRule.satsPerHit}
-                        onChange={(e) => setCustomRule({ ...customRule, satsPerHit: Number(e.target.value) })}
+                        onChange={(e) => setCustomRule({ ...customRule, satsPerHit: Math.max(0, Number(e.target.value) || 0) })}
                         className="w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-foreground focus:border-accent focus:outline-none"
                       />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="mb-1 block text-xs font-medium text-muted">Min Subscribers</label>
+                      <input
+                        type="number"
+                        min={0}
+                        value={customRule.minSubscribers}
+                        onChange={(e) =>
+                          setCustomRule({
+                            ...customRule,
+                            minSubscribers: Math.max(0, Math.floor(Number(e.target.value) || 0)),
+                          })
+                        }
+                        className="w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-foreground focus:border-accent focus:outline-none"
+                      />
+                      <p className="mt-1 text-[10px] text-muted">0 = no minimum</p>
+                    </div>
+                    <div>
+                      <label className="mb-1 block text-xs font-medium text-muted">Max Subscribers</label>
+                      <input
+                        type="number"
+                        min={0}
+                        value={customRule.maxSubscribers}
+                        onChange={(e) =>
+                          setCustomRule({
+                            ...customRule,
+                            maxSubscribers: Math.max(0, Math.floor(Number(e.target.value) || 0)),
+                          })
+                        }
+                        className="w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-foreground focus:border-accent focus:outline-none"
+                      />
+                      <p className="mt-1 text-[10px] text-muted">0 = no maximum</p>
                     </div>
                   </div>
                   <div>
@@ -328,7 +378,7 @@ export default function ControlPage() {
                         channelKeywords: e.target.value.split(",").map((s) => s.trim()).filter(Boolean),
                       })}
                       className="w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-foreground focus:border-accent focus:outline-none"
-                      placeholder="bitcoin, tech, gaming"
+                      placeholder="topics, niches, keywords…"
                     />
                   </div>
                 </div>
@@ -405,38 +455,63 @@ export default function ControlPage() {
                 EXECUTING
               </span>
             </div>
-            <p className="mb-6 text-sm text-muted">
-              The TipSats agent is browsing Rumble, matching creators to your presets, and executing the tip pipeline.
+            <p className="mb-4 text-sm text-muted">
+              Searching Rumble using your presets and guardrails — then Lightning → Boltz → USDT on the agent
+              wallet. Creator links and split amounts appear after the batch payout completes.
             </p>
 
+            {session && (session.presets.length > 0 || (session.rules?.length ?? 0) > 0) && (
+              <div className="mb-6 rounded-xl border border-border bg-background/80 p-4">
+                <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted">
+                  Active guardrails
+                </p>
+                <p className="text-sm text-foreground">
+                  {session.presets.length > 0 && (
+                    <span>
+                      {session.presets.map((id) => PRESETS[id]?.label ?? id).join(" · ")}
+                    </span>
+                  )}
+                  {(session.rules?.length ?? 0) > 0 && (
+                    <span className={session.presets.length > 0 ? " text-muted" : ""}>
+                      {session.presets.length > 0 ? " · " : ""}
+                      Custom rules (views, subscribers, keywords…)
+                    </span>
+                  )}
+                </p>
+              </div>
+            )}
+
             <div className="space-y-3">
-              {(session?.steps?.length ? filterSteps(session.steps) : defaultSteps()).map((step, i) => (
-                <div key={i} className="flex items-center gap-3">
-                  <div className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-bold ${
-                    step.status === "done"
-                      ? "bg-emerald-500/20 text-emerald-400"
-                      : step.status === "running"
-                        ? "bg-accent/20 text-accent animate-pulse"
-                        : step.status === "error"
-                          ? "bg-red-500/20 text-red-400"
-                          : "bg-surface-alt text-muted"
-                  }`}>
-                    {step.status === "done" ? "✓" : step.status === "running" ? "●" : step.status === "error" ? "!" : (i + 1)}
-                  </div>
-                  <div>
-                    <p className={`text-sm font-medium ${
-                      step.status === "done" ? "text-emerald-400" :
-                      step.status === "running" ? "text-accent" :
-                      step.status === "error" ? "text-red-400" : "text-muted"
+              {(session?.steps?.length ? filterSteps(session.steps) : defaultSteps()).map((step, i) => {
+                const vis = mapPipelineStepDisplay(step);
+                return (
+                  <div key={i} className="flex items-center gap-3">
+                    <div className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-bold ${
+                      step.status === "done"
+                        ? "bg-emerald-500/20 text-emerald-400"
+                        : step.status === "running"
+                          ? "bg-accent/20 text-accent animate-pulse"
+                          : step.status === "error"
+                            ? "bg-red-500/20 text-red-400"
+                            : "bg-surface-alt text-muted"
                     }`}>
-                      {step.name}
-                    </p>
-                    {step.detail && (
-                      <p className="text-xs text-muted">{step.detail}</p>
-                    )}
+                      {step.status === "done" ? "✓" : step.status === "running" ? "●" : step.status === "error" ? "!" : (i + 1)}
+                    </div>
+                    <div>
+                      <p className={`text-sm font-medium ${
+                        step.status === "done" ? "text-emerald-400" :
+                        step.status === "running" ? "text-accent" :
+                        step.status === "error" ? "text-red-400" : "text-muted"
+                      }`}>
+                        {vis.title}
+                      </p>
+                      {(vis.detail || step.detail) && (
+                        <p className="text-xs text-muted">{vis.detail ?? step.detail}</p>
+                      )}
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         </div>
@@ -454,6 +529,55 @@ export default function ControlPage() {
             </div>
 
             <div className="space-y-3 rounded-xl border border-border bg-background p-4 font-mono text-sm">
+              <div className="mb-4 rounded-lg border border-border/80 bg-surface-alt/40 p-4 text-xs sm:text-sm">
+                <p className="mb-3 font-semibold text-foreground">Funding &amp; USDT split</p>
+                <div className="space-y-2 text-muted">
+                  <div className="flex flex-col justify-between gap-1 sm:flex-row sm:items-center">
+                    <span>Spark wallet (now)</span>
+                    <span className="text-foreground">
+                      {walletBalance !== null
+                        ? `${walletBalance.toLocaleString()} sats (~$${satsToUsd(walletBalance)} USD)`
+                        : "—"}
+                    </span>
+                  </div>
+                  {session.txDetails.fundedSats && (
+                    <div className="flex flex-col justify-between gap-1 sm:flex-row sm:items-center">
+                      <span>Funded for this tip</span>
+                      <span className="text-foreground">
+                        {Number(session.txDetails.fundedSats).toLocaleString()} sats (~$
+                        {satsToUsd(Number(session.txDetails.fundedSats))} USD)
+                      </span>
+                    </div>
+                  )}
+                  {session.txDetails.tipSplitCapUsdt && (
+                    <div className="flex flex-col justify-between gap-1 sm:flex-row sm:items-center">
+                      <span>This tip — USDT to split (Boltz / funded)</span>
+                      <span className="text-foreground">{session.txDetails.tipSplitCapUsdt} USDT</span>
+                    </div>
+                  )}
+                  {session.txDetails.agentUsdtReceived && (
+                    <div className="flex flex-col justify-between gap-1 sm:flex-row sm:items-center">
+                      <span>Agent wallet balance (may include other funds)</span>
+                      <span className="text-muted">{session.txDetails.agentUsdtReceived} USDT</span>
+                    </div>
+                  )}
+                  {session.txDetails.reservedForGasUsdt && (
+                    <div className="flex flex-col justify-between gap-1 sm:flex-row sm:items-center">
+                      <span>Reserved for gas (not split to creators)</span>
+                      <span className="text-amber-200/90">~{session.txDetails.reservedForGasUsdt} USDT</span>
+                    </div>
+                  )}
+                  {session.txDetails.distributedUsdt && (
+                    <div className="flex flex-col justify-between gap-1 border-t border-border/60 pt-2 sm:flex-row sm:items-center">
+                      <span className="font-medium text-foreground">Distributed (65/35 of this tip only, after gas)</span>
+                      <span className="font-semibold text-emerald-400">
+                        {session.txDetails.distributedUsdt} USDT total
+                      </span>
+                    </div>
+                  )}
+                </div>
+              </div>
+
               <Row label="Creator" value={session.txDetails.creator} />
               <Row label="Creator Addr" value={session.txDetails.creatorAddress} mono />
               {session.txDetails.agentAddress && (
@@ -486,11 +610,33 @@ export default function ControlPage() {
               )}
               {session.txDetails.payoutRecipients &&
                 session.txDetails.payoutRecipients.length > 0 && (
-                  <Row label="Split (USDT)">
-                    <ul className="list-inside list-disc space-y-1 text-xs break-all">
+                  <Row label="USDT to creators">
+                    <ul className="space-y-3 text-xs">
                       {session.txDetails.payoutRecipients.map((r) => (
-                        <li key={r.address}>
-                          {r.amountUsdt} → {r.address}
+                        <li
+                          key={r.address}
+                          className="rounded-lg border border-border/80 bg-surface-alt/50 p-3"
+                        >
+                          <div className="mb-1 flex flex-wrap items-baseline gap-2 font-medium text-foreground">
+                            {r.label && <span>{r.label}</span>}
+                            {r.percent != null && (
+                              <span className="text-muted">({r.percent}%)</span>
+                            )}
+                          </div>
+                          <div className="text-emerald-400">{r.amountUsdt} USDT</div>
+                          {r.channelUrl && (
+                            <a
+                              href={r.channelUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="mt-1 inline-block text-accent hover:text-accent-dim break-all"
+                            >
+                              {r.channelUrl}
+                            </a>
+                          )}
+                          <div className="mt-1 font-mono text-[10px] text-muted break-all">
+                            {r.address}
+                          </div>
                         </li>
                       ))}
                     </ul>
@@ -513,11 +659,39 @@ export default function ControlPage() {
             <div className="mt-4 rounded-xl border border-purple-500/20 bg-purple-500/5 p-4">
               <div className="flex items-center gap-2">
                 <span className="text-purple-400 text-sm font-medium">Featured on Nostr</span>
-                <span className="rounded-full bg-purple-500/15 px-2 py-0.5 text-[10px] font-semibold text-purple-400">COMING SOON</span>
+                {session.txDetails.nostrShareUrl ? (
+                  <span className="rounded-full bg-emerald-500/15 px-2 py-0.5 text-[10px] font-semibold text-emerald-400">
+                    LIVE
+                  </span>
+                ) : session.txDetails.nostrPublishError ? (
+                  <span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-[10px] font-semibold text-amber-400">
+                    PUBLISH FAILED
+                  </span>
+                ) : (
+                  <span className="rounded-full bg-muted/30 px-2 py-0.5 text-[10px] font-semibold text-muted">
+                    NOT CONFIGURED
+                  </span>
+                )}
               </div>
-              <p className="mt-1 text-xs text-muted">
-                This tip will be broadcast on the Nostr social graph, amplifying {session.txDetails.creator}&apos;s visibility.
-              </p>
+              {session.txDetails.nostrShareUrl ? (
+                <p className="mt-2 text-sm">
+                  <a
+                    href={session.txDetails.nostrShareUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-purple-300 hover:text-purple-200 underline break-all"
+                  >
+                    {session.txDetails.nostrShareUrl}
+                  </a>
+                </p>
+              ) : session.txDetails.nostrPublishError ? (
+                <p className="mt-1 text-xs text-amber-200/90">{session.txDetails.nostrPublishError}</p>
+              ) : (
+                <p className="mt-1 text-xs text-muted">
+                  Set NOSTR_PRIVATE_KEY or NWC_URL (with secret=) on the backend. Optionally set
+                  HTTP_NOSTR_BASE_URL for an http-nostr bridge.
+                </p>
+              )}
             </div>
           </div>
 

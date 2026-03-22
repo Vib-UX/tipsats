@@ -11,10 +11,12 @@ import {
 import { payInvoice, quotePayInvoice } from "./spark.js";
 import { getAgentAddress, batchTransferUsdt, getUsdtBalance, quoteBatchTransfer } from "./evm4337.js";
 import {
-  loadPayoutAddresses,
-  resolvePayoutAddresses,
-  splitEvenUsdt,
+  loadPayoutConfig,
+  type PayoutConfig,
+  splitWeightedUsdt,
 } from "./payout-config.js";
+import { publishTipNote } from "./nostr-publish.js";
+import { getNwcSecretKeyBytes } from "./nwc-config.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const HARNESS_DIR = path.resolve(__dirname, "../../../test-harness-twdk-spark-ln");
@@ -34,7 +36,10 @@ const ALL_STEP_NAMES = [
   "Payment confirmed",
   "USDT received by agent",
   "Distributing to creators",
+  "Broadcasting on Nostr",
 ];
+
+const BROADCAST_NOSTR_STEP_INDEX = ALL_STEP_NAMES.length - 1;
 
 function parseSteps(output: string): PipelineStep[] {
   const steps: PipelineStep[] = [];
@@ -97,15 +102,15 @@ export async function runPipeline(tipId: string, tipAmountSats: number): Promise
   updateTipStatus(tipId, "agent_running");
   running.add(tipId);
 
-  let payoutConfigAddresses: string[];
+  let payoutCfg: PayoutConfig;
   try {
-    payoutConfigAddresses = loadPayoutAddresses();
+    payoutCfg = loadPayoutConfig();
   } catch (err: any) {
     setTipError(tipId, `Payout config failed: ${err.message}`);
     running.delete(tipId);
     return;
   }
-  const expectedAddress = payoutConfigAddresses[0];
+  const expectedAddress = payoutCfg.addresses[0];
 
   let agentAddr: string;
   try {
@@ -125,6 +130,11 @@ export async function runPipeline(tipId: string, tipAmountSats: number): Promise
         ? "true"
         : "false";
 
+  const rumbleSearchDemo =
+    process.env.RUMBLE_SEARCH_DEMO !== undefined
+      ? process.env.RUMBLE_SEARCH_DEMO === "true"
+      : skipRumble === "false";
+
   const { WDK_SEED: _omit, ...parentEnv } = process.env;
   const env = {
     ...parentEnv,
@@ -132,6 +142,7 @@ export async function runPipeline(tipId: string, tipAmountSats: number): Promise
     KEEP_BROWSER_OPEN: "true",
     HEADLESS: isHeadless ? "true" : "false",
     SKIP_RUMBLE: skipRumble,
+    RUMBLE_SEARCH_DEMO: rumbleSearchDemo ? "true" : "false",
     RUMBLE_USER: "crypto_vib",
     TIP_AMOUNT_SATS: String(tipAmountSats),
     EXPECTED_ADDRESS: expectedAddress,
@@ -177,7 +188,10 @@ export async function runPipeline(tipId: string, tipAmountSats: number): Promise
       updateTipSteps(tipId, makeSteps(harnessIdx + 2)); // "USDT received by agent" = running
 
       const txDetails = parseTxDetails(output, result.id, agentAddr);
-      if (txDetails) updateTipTxDetails(tipId, txDetails);
+      if (txDetails) {
+        txDetails.fundedSats = String(tipAmountSats);
+        updateTipTxDetails(tipId, txDetails);
+      }
 
       // Wait for USDT to arrive at agent (Boltz settlement takes some time)
       console.log(`[TipSats] Waiting for USDT to arrive at agent ${agentAddr}...`);
@@ -199,17 +213,29 @@ export async function runPipeline(tipId: string, tipAmountSats: number): Promise
 
       updateTipSteps(tipId, makeSteps(harnessIdx + 3)); // "Distributing to creators" = running
 
-      const payoutAddresses = resolvePayoutAddresses(output);
+      const { addresses: payoutAddresses, splitWeights, channels: channelMeta } = payoutCfg;
+      const sumW = splitWeights.reduce((a, b) => a + b, 0);
       console.log(
-        `[TipSats] Payout recipients (${payoutAddresses.length}): ${payoutAddresses.join(", ")}`
+        `[TipSats] Payout recipients (${payoutAddresses.length}, weights ${splitWeights.join("/")}): ${payoutAddresses.join(", ")}`
       );
 
-      // Quote the batch fee first, then send balance minus fee
       const balanceNum = parseFloat(agentBalance);
+      const fromSwap = parseFloat(txDetails?.amountUsdt ?? "");
+      const tipUsdTarget =
+        Number.isFinite(fromSwap) && fromSwap > 0 ? fromSwap : tipAmountSats / 1500;
+      /** Only this tip’s USDT is split 65/35 — not the agent’s full treasury */
+      const poolCap = Math.min(balanceNum, tipUsdTarget);
+      if (balanceNum > tipUsdTarget + 1e-6) {
+        console.log(
+          `[TipSats] Agent has ${balanceNum} USDT but this tip only allocates ${tipUsdTarget.toFixed(6)} USDT — splitting min(balance, tip) = ${poolCap.toFixed(6)} USDT; remainder stays on agent`
+        );
+      }
+
+      // Quote fee on the capped pool, not the full wallet
       let feeUsdt = 0.1; // conservative default
       try {
-        const provisional = Math.max(0, balanceNum - 0.15).toFixed(6);
-        const quoteRecipients = splitEvenUsdt(provisional, payoutAddresses);
+        const provisional = Math.max(0, poolCap - 0.15).toFixed(6);
+        const quoteRecipients = splitWeightedUsdt(provisional, payoutAddresses, splitWeights);
         const feeRaw = await quoteBatchTransfer(quoteRecipients);
         feeUsdt = Number(feeRaw) / 1e6; // raw fee is in paymaster token base units (6 decimals)
         console.log(`[TipSats] Estimated batch fee: ${feeUsdt} USDT (raw: ${feeRaw})`);
@@ -217,27 +243,71 @@ export async function runPipeline(tipId: string, tipAmountSats: number): Promise
         console.log(`[TipSats] Fee quote failed, using default 0.1 USDT: ${e.message}`);
       }
 
-      const sendAmount = Math.max(0, balanceNum - feeUsdt - 0.01).toFixed(6); // extra 0.01 buffer
+      const sendAmount = Math.max(0, poolCap - feeUsdt - 0.01).toFixed(6); // extra 0.01 buffer
       console.log(
-        `[TipSats] Distributing ${sendAmount} USDT total (even split, balance: ${agentBalance}, fee: ~${feeUsdt})`
+        `[TipSats] Distributing ${sendAmount} USDT total (65/35 of tip pool ${poolCap.toFixed(6)} USDT; agent balance ${balanceNum}, fee ~${feeUsdt})`
       );
 
       if (parseFloat(sendAmount) <= 0) {
-        throw new Error(`Agent USDT balance (${agentBalance}) too low to cover gas fee (~${feeUsdt} USDT)`);
+        throw new Error(
+          `Not enough USDT for this tip’s split after gas (pool ${poolCap.toFixed(6)} USDT, need ~${feeUsdt} USDT for fees)`
+        );
       }
 
-      const batchRecipients = splitEvenUsdt(sendAmount, payoutAddresses);
-      for (const r of batchRecipients) {
-        console.log(`[TipSats]   -> ${r.address}: ${r.amountUsdt} USDT`);
+      const batchRecipients = splitWeightedUsdt(sendAmount, payoutAddresses, splitWeights);
+      for (let i = 0; i < batchRecipients.length; i++) {
+        const r = batchRecipients[i];
+        const pct = Math.round((1000 * splitWeights[i]) / sumW) / 10;
+        console.log(`[TipSats]   -> ${r.address}: ${r.amountUsdt} USDT (${pct}%)`);
       }
 
       const batchResult = await batchTransferUsdt(batchRecipients);
-      console.log(`[TipSats] Batch result: hash=${batchResult.hash}, fee=${batchResult.fee}`);
+      console.log(
+        `[TipSats] Batch result: onChainTx=${batchResult.hash}, userOpHash=${batchResult.userOpHash}, fee=${batchResult.fee}`,
+      );
 
       if (txDetails) {
+        // batchResult.hash is the Polygon tx hash (Blockscout); userOpHash is the bundler user op id.
         txDetails.batchTxHash = batchResult.hash;
-        txDetails.payoutRecipients = batchRecipients;
+        txDetails.agentUsdtReceived = agentBalance;
+        txDetails.tipSplitCapUsdt = tipUsdTarget.toFixed(6);
+        txDetails.reservedForGasUsdt = (feeUsdt + 0.01).toFixed(6);
+        txDetails.distributedUsdt = sendAmount;
+        txDetails.payoutRecipients = batchRecipients.map((r, i) => ({
+          address: r.address,
+          amountUsdt: r.amountUsdt,
+          percent: Math.round((1000 * splitWeights[i]) / sumW) / 10,
+          label: channelMeta[i]?.label,
+          channelUrl: channelMeta[i]?.url || undefined,
+        }));
         updateTipTxDetails(tipId, txDetails);
+      }
+
+      const nostrConfigured =
+        Boolean(process.env.NOSTR_PRIVATE_KEY?.trim()) ||
+        getNwcSecretKeyBytes() !== null;
+
+      if (txDetails && nostrConfigured) {
+        updateTipSteps(tipId, makeSteps(BROADCAST_NOSTR_STEP_INDEX));
+        const nostrResult = await publishTipNote({
+          tx: txDetails,
+          channels: channelMeta,
+        });
+        if ("nostrPublishError" in nostrResult) {
+          console.error(`[TipSats] Nostr: ${nostrResult.nostrPublishError}`);
+          txDetails.nostrPublishError = nostrResult.nostrPublishError;
+          updateTipTxDetails(tipId, txDetails);
+        } else {
+          txDetails.nostrEventId = nostrResult.nostrEventId;
+          txDetails.nostrRelayUrl = nostrResult.nostrRelayUrl;
+          txDetails.nostrShareUrl = nostrResult.nostrShareUrl;
+          updateTipTxDetails(tipId, txDetails);
+          console.log(`[TipSats] Nostr note: ${nostrResult.nostrShareUrl}`);
+        }
+      } else if (!nostrConfigured && txDetails) {
+        console.log(
+          "[TipSats] Nostr publish skipped (set NOSTR_PRIVATE_KEY or NWC_URL with secret=; optional HTTP_NOSTR_BASE_URL for http-nostr)",
+        );
       }
 
       updateTipSteps(tipId, ALL_STEP_NAMES.map((name) => ({ name, status: "done" as const })));
