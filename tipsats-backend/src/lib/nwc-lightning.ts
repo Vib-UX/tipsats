@@ -1,6 +1,7 @@
 /**
  * Lightning via Nostr Wallet Connect (NIP-47) using @getalby/sdk — works where Spark API is unreachable (e.g. some Railway networks).
  */
+import "../polyfills/node-websocket.js";
 import { nwc } from "@getalby/sdk";
 import { getNwcConnectionUrl } from "./nwc-config.js";
 import type { InvoiceResult, PaymentResult, InvoiceStatus } from "./spark.js";
