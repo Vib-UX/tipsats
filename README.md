@@ -2,6 +2,11 @@
 
 **Lightning-native tips for Bitcoin creators <—> USDT , Nostr amplification.**
 
+[![Spark (TWDK)](https://img.shields.io/npm/v/%40tetherto%2Fwdk-wallet-spark?label=Spark%20%28TWDK%29&logo=npm)](https://www.npmjs.com/package/@tetherto/wdk-wallet-spark)
+[![ERC-4337 (TWDK)](https://img.shields.io/npm/v/%40tetherto%2Fwdk-wallet-evm-erc-4337?label=ERC-4337%20%28TWDK%29&logo=npm)](https://www.npmjs.com/package/@tetherto/wdk-wallet-evm-erc-4337)
+[![nostr-tools](https://img.shields.io/npm/v/nostr-tools?label=nostr-tools&logo=npm)](https://www.npmjs.com/package/nostr-tools)
+[![wdk-wallet-nostr](https://img.shields.io/npm/v/wdk-wallet-nostr?label=wdk-wallet-nostr&logo=npm&color=brightgreen)](https://www.npmjs.com/package/wdk-wallet-nostr)
+
 ---
 
 ## Problem
@@ -17,11 +22,15 @@ Rumble surfaces **on-chain Bitcoin addresses** for support. For **micro-tips**, 
   - **Boltz harness** — [`test-harness-twdk-spark-ln/boltz.ts`](https://github.com/Vib-UX/tipsats/blob/main/test-harness-twdk-spark-ln/boltz.ts)
 - **TWDK + ERC-4337** — **batch** USDT transfers from the agent wallet to **multiple creator addresses** in one user-operation flow (Polygon).
   - **ERC-4337 + batch API** — [`tipsats-backend/src/lib/evm4337.ts`](https://github.com/Vib-UX/tipsats/blob/main/tipsats-backend/src/lib/evm4337.ts) · [`tipsats-backend/src/routes/agent.ts`](https://github.com/Vib-UX/tipsats/blob/main/tipsats-backend/src/routes/agent.ts)
-- **Nostr** — publish after payout to **boost visibility** and engagement around the tipped channels.
+- **Extends TWDK Nostr** — publish after payout to **boost visibility** and engagement around the tipped channels.
   - **Publish + NWC bridge** — [`tipsats-backend/src/lib/nostr-publish.ts`](https://github.com/Vib-UX/tipsats/blob/main/tipsats-backend/src/lib/nostr-publish.ts) · [`tipsats-backend/src/lib/nwc-config.ts`](https://github.com/Vib-UX/tipsats/blob/main/tipsats-backend/src/lib/nwc-config.ts)
 - **Pipeline** (pay bolt11 → wait for USDT → ERC-4337 batch → Nostr) — [`tipsats-backend/src/lib/pipeline.ts`](https://github.com/Vib-UX/tipsats/blob/main/tipsats-backend/src/lib/pipeline.ts)
 - **Dependencies** (`@tetherto/wdk-wallet-spark`, `@tetherto/wdk-wallet-evm-erc-4337`, `nostr-tools`, …) — [`tipsats-backend/package.json`](https://github.com/Vib-UX/tipsats/blob/main/tipsats-backend/package.json)
 
+### Notable mentions
+
+- **[wdk-wallet-nostr](https://www.npmjs.com/package/wdk-wallet-nostr)**
+— Tether WDK Nostr wallet module (ecosystem alignment).
 ---
 
 ## Architecture (high level)
