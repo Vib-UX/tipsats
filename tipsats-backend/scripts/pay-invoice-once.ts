@@ -1,5 +1,5 @@
 import "dotenv/config";
-import { payInvoice, getBalance } from "../src/lib/spark.js";
+import { payInvoice, getBalance } from "../src/lib/lightning-wallet.js";
 
 const bolt11 = process.argv[2];
 if (!bolt11) {

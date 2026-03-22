@@ -1,5 +1,5 @@
 import { Router, type Request, type Response } from "express";
-import { getBalance, getAddress } from "../lib/spark.js";
+import { getBalance, getAddress } from "../lib/lightning-wallet.js";
 
 const router = Router();
 

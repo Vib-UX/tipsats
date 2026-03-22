@@ -8,7 +8,7 @@ import {
   updateTipTxDetails,
   setTipError,
 } from "./tip-store.js";
-import { payInvoice, quotePayInvoice } from "./spark.js";
+import { payInvoice, quotePayInvoice } from "./lightning-wallet.js";
 import { getAgentAddress, batchTransferUsdt, getUsdtBalance, quoteBatchTransfer } from "./evm4337.js";
 import {
   loadPayoutConfig,

@@ -5,6 +5,7 @@ import walletRouter from "./routes/wallet.js";
 import tipRouter from "./routes/tip.js";
 import agentRouter from "./routes/agent.js";
 import { getNwcPublicMeta, isNwcConfigured } from "./lib/nwc-config.js";
+import { resolveLightningBackend } from "./lib/lightning-wallet.js";
 
 const app = express();
 const PORT = Number(process.env.PORT) || 8080;
@@ -55,5 +56,11 @@ app.listen(PORT, "0.0.0.0", () => {
     console.log(
       `[TipSats Backend] NWC: not set (set NWC_URL for Lightning + future zap flows)`,
     );
+  }
+  try {
+    console.log(`[TipSats Backend] Lightning backend: ${resolveLightningBackend()}`);
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : String(e);
+    console.warn(`[TipSats Backend] Lightning backend: not ready — ${msg}`);
   }
 });

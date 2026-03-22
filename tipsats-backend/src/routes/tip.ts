@@ -1,7 +1,7 @@
 import { Router, type Request, type Response } from "express";
 import { generateTipId, createTip, getTip, updateTipStatus, updateTipBalance } from "../lib/tip-store.js";
 import { DEFAULT_RULE, type Rule } from "../lib/types.js";
-import { createInvoice, getBalance, checkInvoiceStatus } from "../lib/spark.js";
+import { createInvoice, getBalance, checkInvoiceStatus } from "../lib/lightning-wallet.js";
 import { runPipeline, isRunning } from "../lib/pipeline.js";
 
 const router = Router();
