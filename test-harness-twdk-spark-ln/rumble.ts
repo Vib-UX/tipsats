@@ -1,5 +1,5 @@
 import type { Page } from "playwright";
-import { navigateAndWait } from "./browser.js";
+import { navigateAndWait, waitForCloudflare } from "./browser.js";
 
 type Log = (msg: string) => void;
 
@@ -7,6 +7,76 @@ async function snapshot(page: Page, label: string, log: Log): Promise<string> {
   const text = await page.evaluate(() => document.body?.innerText || "");
   log(`  [snapshot:${label}] ${text.slice(0, 200).replace(/\n/g, " ")}...`);
   return text;
+}
+
+/** Channel pages often use different chrome than /user/ — try roles + scroll. */
+async function tryClickTipOrRantButton(page: Page, log: Log): Promise<boolean> {
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await page.waitForTimeout(400);
+
+  const candidates: { name: string; run: () => Promise<boolean> }[] = [
+    {
+      name: "getByRole button /tip|rants|rant/i",
+      run: async () => {
+        const loc = page.getByRole("button", { name: /tip|rants|rant/i }).first();
+        await loc.scrollIntoViewIfNeeded().catch(() => {});
+        if (await loc.isVisible().catch(() => false)) {
+          await loc.click({ timeout: 5000 });
+          return true;
+        }
+        return false;
+      },
+    },
+    {
+      name: "getByRole link /tip/i",
+      run: async () => {
+        const loc = page.getByRole("link", { name: /tip/i }).first();
+        await loc.scrollIntoViewIfNeeded().catch(() => {});
+        if (await loc.isVisible().catch(() => false)) {
+          await loc.click({ timeout: 5000 });
+          return true;
+        }
+        return false;
+      },
+    },
+    {
+      name: "a[href*='tip']",
+      run: async () => {
+        const loc = page.locator('a[href*="tip"]').first();
+        await loc.scrollIntoViewIfNeeded().catch(() => {});
+        if (await loc.isVisible().catch(() => false)) {
+          await loc.click({ timeout: 5000 });
+          return true;
+        }
+        return false;
+      },
+    },
+    {
+      name: "text Rant & Tip",
+      run: async () => {
+        const loc = page.getByText(/rant\s*&\s*tip/i).first();
+        await loc.scrollIntoViewIfNeeded().catch(() => {});
+        if (await loc.isVisible().catch(() => false)) {
+          await loc.click({ timeout: 5000 });
+          return true;
+        }
+        return false;
+      },
+    },
+  ];
+
+  for (const { name, run } of candidates) {
+    try {
+      if (await run()) {
+        log(`  Clicked Tip entry via: ${name}`);
+        await page.waitForTimeout(1500);
+        return true;
+      }
+    } catch {
+      /* next */
+    }
+  }
+  return false;
 }
 
 async function findAndClick(
@@ -55,39 +125,42 @@ async function extractAddress(page: Page): Promise<string | null> {
   return inputAddr;
 }
 
+export type ChannelTipResult = { channelUrl: string; tipAddress: string };
+
 /**
- * Navigate the Rumble tip modal to extract the creator's USDT Polygon address.
- *
- * Steps: profile page -> Tip button -> "another crypto wallet" -> USDT -> Polygon -> extract 0x address
+ * On a Rumble **channel** (`/c/...`) or **user** (`/user/...`) page: open Tip flow and read Polygon USDT address.
  */
-export async function extractCreatorAddress(
+export async function extractPolygonTipAddressFromCurrentPage(
   page: Page,
-  rumbleUser: string,
   expectedAddress: string,
   log: Log
 ): Promise<string> {
-  // Navigate to creator page (handles Cloudflare)
-  await navigateAndWait(page, `https://rumble.com/user/${rumbleUser}`, log);
-  await snapshot(page, "creator-page", log);
+  await snapshot(page, "channel-or-profile", log);
 
-  // Click Tip button on profile page
-  log("Looking for Tip button on profile page...");
-  const tipFound = await findAndClick(
-    page,
-    [
-      'button:has-text("Tip")',
-      '[class*="tip-button"]',
-      '[class*="tip"] button',
-      'button[title*="Tip"]',
-      '[data-action="tip"]',
-      'button:has-text("tip")',
-      '.rumbles-vote-pill button',
-      'button:has-text("Rant")',
-      '[class*="rant"] button',
-    ],
-    "Tip button",
-    15_000
-  );
+  // Click Tip / Rant entry (channel `/c/` pages differ from `/user/` layouts)
+  log("Looking for Tip / Rant button on channel or profile...");
+  let tipFound = await tryClickTipOrRantButton(page, log);
+  if (!tipFound) {
+    tipFound = await findAndClick(
+      page,
+      [
+        'button:has-text("Tip")',
+        '[class*="tip-button"]',
+        '[class*="tip"] button',
+        'button[title*="Tip"]',
+        '[data-action="tip"]',
+        'button:has-text("tip")',
+        ".rumbles-vote-pill button",
+        'button:has-text("Rant")',
+        '[class*="rant"] button',
+        'button:has-text("Support")',
+        'a:has-text("Tip")',
+        '[class*="header"] button:has-text("Tip")',
+      ],
+      "Tip button",
+      15_000
+    );
+  }
 
   if (!tipFound) {
     await page.screenshot({ path: "./debug-no-tip-button.png", fullPage: true });
@@ -182,4 +255,119 @@ export async function extractCreatorAddress(
   }
 
   return creatorAddress;
+}
+
+/**
+ * Navigate the Rumble tip modal to extract the creator's USDT Polygon address.
+ *
+ * Steps: profile page -> Tip button -> "another crypto wallet" -> USDT -> Polygon -> extract 0x address
+ */
+export async function extractCreatorAddress(
+  page: Page,
+  rumbleUser: string,
+  expectedAddress: string,
+  log: Log
+): Promise<string> {
+  await navigateAndWait(page, `https://rumble.com/user/${rumbleUser}`, log);
+  return extractPolygonTipAddressFromCurrentPage(page, expectedAddress, log);
+}
+
+async function tryOpenChannelsTab(page: Page, log: Log): Promise<void> {
+  const tabSelectors = [
+    'a:has-text("Channels")',
+    'button:has-text("Channels")',
+    '[role="tab"]:has-text("Channels")',
+    "text=Channels",
+  ];
+  for (const sel of tabSelectors) {
+    try {
+      const el = page.locator(sel).first();
+      if (await el.isVisible({ timeout: 2000 })) {
+        await el.click();
+        log("  Opened Channels tab");
+        await page.waitForTimeout(2000);
+        return;
+      }
+    } catch {
+      /* try next */
+    }
+  }
+  log("  (No Channels tab clicked — using mixed results)");
+}
+
+async function closeTipUi(page: Page): Promise<void> {
+  await page.keyboard.press("Escape");
+  await page.waitForTimeout(400);
+}
+
+/** Default Playwright demo: Bitcoin Ben first, then Simply Bitcoin (matches Mission Control examples). */
+export const DEFAULT_DEMO_CHANNEL_SLUGS = ["BITCOINBEN", "SimplyBitcoin"] as const;
+
+/**
+ * Playwright demo: open Rumble search (context), then visit **fixed channels in order** — tip on each,
+ * go back to search between visits.
+ *
+ * Default order: **Bitcoin Ben** (`/c/BITCOINBEN`) → **Simply Bitcoin** (`/c/SimplyBitcoin`).
+ */
+export async function extractTwoChannelsFromSearchDemo(
+  page: Page,
+  searchQuery: string,
+  expectedAddress: string,
+  log: Log,
+  channelSlugs: readonly string[] = DEFAULT_DEMO_CHANNEL_SLUGS
+): Promise<{ channels: ChannelTipResult[]; primaryAddress: string }> {
+  if (channelSlugs.length < 2) {
+    throw new Error("extractTwoChannelsFromSearchDemo: need at least 2 channel slugs");
+  }
+
+  const searchUrl = `https://rumble.com/search/all?q=${encodeURIComponent(searchQuery)}`;
+  log(`Search demo: ${searchUrl}`);
+  await navigateAndWait(page, searchUrl, log);
+  await snapshot(page, "search-results", log);
+
+  await tryOpenChannelsTab(page, log);
+  await page.waitForTimeout(1500);
+
+  const urls = channelSlugs.slice(0, 2).map((slug) => {
+    const s = slug.trim().replace(/^\/+/, "");
+    return `https://rumble.com/c/${s}`;
+  });
+  log(
+    `  Fixed channel order: ${urls.map((u) => u.replace("https://rumble.com/c/", "")).join(" → ")}`
+  );
+
+  const channels: ChannelTipResult[] = [];
+
+  for (let i = 0; i < 2; i++) {
+    const targetUrl = urls[i];
+    log(`\n  ── Channel ${i + 1}: ${targetUrl} ──`);
+    await navigateAndWait(page, targetUrl, log);
+
+    const channelUrl = page.url().split("?")[0];
+    log(`  Channel URL: ${channelUrl}`);
+
+    const tipAddress = await extractPolygonTipAddressFromCurrentPage(
+      page,
+      expectedAddress,
+      log
+    );
+    log(`  Tip address (Polygon USDT): ${tipAddress}`);
+    channels.push({ channelUrl, tipAddress });
+
+    await closeTipUi(page);
+
+    if (i === 0) {
+      log("  Going back to search results...");
+      await page.goBack({ waitUntil: "domcontentloaded" }).catch(() => {});
+      await waitForCloudflare(page, log);
+      await page.waitForTimeout(1500);
+      const u = page.url();
+      if (!u.includes("/search")) {
+        log(`  goBack landed on ${u} — reopening search`);
+        await navigateAndWait(page, searchUrl, log);
+      }
+    }
+  }
+
+  return { channels, primaryAddress: channels[0].tipAddress };
 }

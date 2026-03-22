@@ -92,11 +92,17 @@ export interface TxDetails {
   amountUsdt: string;
   boltzUrl: string;
   batchTxHash?: string;
+  /** Invoice / funded amount in sats (same as session budget for this tip) */
   fundedSats?: string;
+  /** USDT balance on agent when batch runs (Boltz proceeds landed) */
   agentUsdtReceived?: string;
+  /** Paymaster fee + buffer — not included in creator split */
   reservedForGasUsdt?: string;
+  /** Total USDT sent to creators (65/35 of this pool, after gas reserve) */
   distributedUsdt?: string;
+  /** USDT amount attributed to this tip (Boltz quote); split uses min(agent, this), not full wallet */
   tipSplitCapUsdt?: string;
+  /** Per-recipient USDT amounts when batch split is used */
   payoutRecipients?: {
     address: string;
     amountUsdt: string;
@@ -104,9 +110,13 @@ export interface TxDetails {
     label?: string;
     channelUrl?: string;
   }[];
+  /** Published kind-1 note id (hex) when http-nostr succeeds */
   nostrEventId?: string;
+  /** Relay used for publish (from bridge response or request) */
   nostrRelayUrl?: string;
+  /** Open in a Nostr web client (default njump.me; override with NOSTR_NOTE_URL_TEMPLATE) */
   nostrShareUrl?: string;
+  /** Set when publish was attempted but failed */
   nostrPublishError?: string;
 }
 

@@ -1,8 +1,29 @@
 import "dotenv/config";
+import { readFileSync } from "fs";
+import path from "path";
+import { fileURLToPath } from "url";
 import { launchBrowser } from "./browser.js";
-import { extractCreatorAddress } from "./rumble.js";
+import { extractCreatorAddress, extractTwoChannelsFromSearchDemo } from "./rumble.js";
 import { createBoltzSwap } from "./boltz.js";
 import { initSpark, payInvoice, quotePayInvoice } from "./lightning.js";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+/** Same file as tipsats-backend (repo root layout). Pipeline parses this line for payout split. */
+function loadPayoutAddressesFromConfig(): string[] {
+  const configPath = path.resolve(__dirname, "../tipsats-backend/config/payouts.json");
+  const raw = JSON.parse(readFileSync(configPath, "utf8")) as { payoutAddresses?: unknown };
+  const list = raw.payoutAddresses;
+  if (!Array.isArray(list) || list.length === 0) {
+    throw new Error("payouts.json: payoutAddresses must be a non-empty array");
+  }
+  for (const a of list) {
+    if (typeof a !== "string" || !/^0x[a-fA-F0-9]{40}$/.test(a)) {
+      throw new Error(`payouts.json: invalid address ${String(a)}`);
+    }
+  }
+  return list as string[];
+}
 
 const DRY_RUN = process.env.DRY_RUN !== "false";
 const RUMBLE_USER = process.env.RUMBLE_USER || "crypto_vib";
@@ -10,6 +31,18 @@ const TIP_AMOUNT_SATS = parseInt(process.env.TIP_AMOUNT_SATS || "0", 10);
 const TIP_AMOUNT_USD = parseFloat(process.env.TIP_AMOUNT_USD || "1.00");
 const WDK_SEED = process.env.WDK_SEED || "";
 const EXPECTED_ADDRESS = process.env.EXPECTED_ADDRESS || "";
+/** Override Boltz receive address (e.g. agent 4337 wallet instead of creator). */
+const BOLTZ_RECIPIENT = process.env.BOLTZ_RECIPIENT || "";
+/** On Railway/headless, Rumble's Cloudflare cannot be solved — use EXPECTED_ADDRESS only. */
+const SKIP_RUMBLE = process.env.SKIP_RUMBLE === "true";
+/** Playwright demo: search → Channels → 1st channel (tip + URL) → back → 2nd channel. */
+const RUMBLE_SEARCH_DEMO = process.env.RUMBLE_SEARCH_DEMO === "true";
+const RUMBLE_SEARCH_QUERY = process.env.RUMBLE_SEARCH_QUERY || "bitcoin";
+/** Comma-separated channel slugs after /c/ — default Bitcoin Ben then Simply Bitcoin */
+const RUMBLE_DEMO_CHANNEL_SLUGS = (process.env.RUMBLE_DEMO_CHANNEL_SLUGS || "BITCOINBEN,SimplyBitcoin")
+  .split(",")
+  .map((s) => s.trim())
+  .filter(Boolean);
 
 function log(msg: string) {
   console.log(`[TipSats-Spark] ${msg}`);
@@ -53,25 +86,74 @@ async function main() {
 
   try {
     // ── Step 3: Rumble flow → extract creator address ──
-    logStep(3, `Extracting creator address from Rumble (${RUMBLE_USER})...`);
+    let creatorAddress: string;
+    let creatorLabel = RUMBLE_USER;
 
-    const creatorAddress = await extractCreatorAddress(
-      page,
-      RUMBLE_USER,
-      EXPECTED_ADDRESS,
-      log
-    );
+    if (SKIP_RUMBLE) {
+      if (!EXPECTED_ADDRESS || !/^0x[a-fA-F0-9]{40}$/.test(EXPECTED_ADDRESS.trim())) {
+        throw new Error(
+          "SKIP_RUMBLE requires EXPECTED_ADDRESS=0x... (valid Polygon creator address)"
+        );
+      }
+      logStep(
+        3,
+        `Extracting creator address — skipping Rumble UI (SKIP_RUMBLE), using EXPECTED_ADDRESS`
+      );
+      creatorAddress = EXPECTED_ADDRESS.trim();
+      log(`  Creator address: ${creatorAddress}`);
+      log(`  Creator: ${RUMBLE_USER} (demo label; address from env)`);
+    } else if (RUMBLE_SEARCH_DEMO) {
+      logStep(
+        3,
+        `Extracting creator address — search demo: "${RUMBLE_SEARCH_QUERY}" → channels → 2 profiles → tip addresses`
+      );
+      const { channels, primaryAddress } = await extractTwoChannelsFromSearchDemo(
+        page,
+        RUMBLE_SEARCH_QUERY,
+        EXPECTED_ADDRESS,
+        log,
+        RUMBLE_DEMO_CHANNEL_SLUGS
+      );
+      creatorAddress = primaryAddress;
+      const slug0 = channels[0]?.channelUrl.match(/\/c\/([^/?]+)/)?.[1];
+      creatorLabel = slug0 ?? "search-demo";
+      log(`  Primary creator label: ${creatorLabel}`);
+      log(`  Channel 1 URL: ${channels[0]?.channelUrl}`);
+      log(`  Channel 1 tip:   ${channels[0]?.tipAddress}`);
+      log(`  Channel 2 URL: ${channels[1]?.channelUrl}`);
+      log(`  Channel 2 tip:   ${channels[1]?.tipAddress}`);
+      log(`Creator: ${creatorLabel}`);
+      log(`Address: ${creatorAddress}`);
+    } else {
+      logStep(3, `Extracting creator address from Rumble (${RUMBLE_USER})...`);
 
-    log(`  Creator: ${RUMBLE_USER}`);
-    log(`  Address: ${creatorAddress}`);
+      creatorAddress = await extractCreatorAddress(
+        page,
+        RUMBLE_USER,
+        EXPECTED_ADDRESS,
+        log
+      );
+
+      log(`  Creator: ${RUMBLE_USER}`);
+      log(`  Address: ${creatorAddress}`);
+    }
+
+    const payoutAddresses = loadPayoutAddressesFromConfig();
+    // Stable contract for tipsats-backend pipeline (prefer this list over re-reading config).
+    console.log(`Payout addresses: ${payoutAddresses.join(",")}`);
 
     // ── Step 4: Boltz swap → Lightning invoice ──
+    const boltzRecipient = BOLTZ_RECIPIENT || creatorAddress;
     const swapSats = TIP_AMOUNT_SATS > 0 ? TIP_AMOUNT_SATS : Math.round(TIP_AMOUNT_USD * 1500);
     logStep(4, `Creating Boltz swap: ${swapSats} sats → USDT...`);
+    if (BOLTZ_RECIPIENT) {
+      log(`  Boltz receive → agent address: ${BOLTZ_RECIPIENT}`);
+      log(`  Creator address for later payout: ${creatorAddress}`);
+    }
 
     const { swapId, bolt11, satsAmount, usdtAmount } = await createBoltzSwap(
       context,
-      creatorAddress,
+      boltzRecipient,
       swapSats,
       log
     );
@@ -84,8 +166,8 @@ async function main() {
     console.log("├─────────────────────────────────────────────────────┤");
     console.log(`│  Swap ID:  ${swapId}`);
     console.log(`│  Amount:   ~${satsAmount} sats (~${usdtAmount} USDT)`);
-    console.log(`│  To:       ${creatorAddress} (Polygon)`);
-    console.log(`│  Creator:  ${RUMBLE_USER}`);
+    console.log(`│  To:       ${boltzRecipient} (Polygon)`);
+    console.log(`│  Creator:  ${creatorLabel}`);
     console.log("├─────────────────────────────────────────────────────┤");
     console.log(`│  ${bolt11}`);
     console.log("└─────────────────────────────────────────────────────┘");
@@ -126,7 +208,7 @@ async function main() {
     console.log("\n╔══════════════════════════════════════════════════════╗");
     console.log("║     Run Complete                                     ║");
     console.log("╚══════════════════════════════════════════════════════════╝");
-    log(`Creator:    ${RUMBLE_USER}`);
+    log(`Creator:    ${creatorLabel}`);
     log(`Address:    ${creatorAddress}`);
     log(`Amount:     ${satsAmount} sats (~${usdtAmount} USDT)`);
     log(`Swap ID:    ${swapId}`);

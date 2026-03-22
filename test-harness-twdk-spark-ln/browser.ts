@@ -4,18 +4,20 @@ import path from "path";
 const PROFILE_DIR = path.resolve(import.meta.dirname, ".chrome-profile");
 const CLOUDFLARE_TITLE = "Just a moment...";
 const CLOUDFLARE_POLL_MS = 2000;
-const CLOUDFLARE_TIMEOUT_MS = 120_000;
+const CLOUDFLARE_TIMEOUT_MS = Number(process.env.CLOUDFLARE_TIMEOUT_MS) || 120_000;
 
 export async function launchBrowser(): Promise<{
   context: BrowserContext;
   page: Page;
 }> {
+  const isHeadless = process.env.HEADLESS === "true";
   const context = await chromium.launchPersistentContext(PROFILE_DIR, {
-    headless: false,
+    headless: isHeadless,
     viewport: { width: 1280, height: 800 },
     args: [
       "--disable-blink-features=AutomationControlled",
       "--no-sandbox",
+      "--disable-dev-shm-usage",
     ],
   });
 
@@ -49,8 +51,12 @@ export async function waitForCloudflare(
       return;
     }
 
+    const headless = process.env.HEADLESS === "true";
+    const hint = headless
+      ? `datacenter/headless browsers usually cannot pass Rumble's Cloudflare — use SKIP_RUMBLE=true and EXPECTED_ADDRESS on the server`
+      : `solve it in the browser if prompted`;
     log(
-      `  Cloudflare check in progress... (${Math.round((Date.now() - start) / 1000)}s) -- solve it in the browser if prompted`
+      `  Cloudflare check in progress... (${Math.round((Date.now() - start) / 1000)}s) — ${hint}`
     );
     await page.waitForTimeout(CLOUDFLARE_POLL_MS);
   }
