@@ -1,8 +1,29 @@
 import "dotenv/config";
+import { readFileSync } from "fs";
+import path from "path";
+import { fileURLToPath } from "url";
 import { launchBrowser } from "./browser.js";
 import { extractCreatorAddress } from "./rumble.js";
 import { createBoltzSwap } from "./boltz.js";
 import { initSpark, payInvoice, quotePayInvoice } from "./lightning.js";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+/** Same file as tipsats-backend (repo root layout). Pipeline parses this line for payout split. */
+function loadPayoutAddressesFromConfig(): string[] {
+  const configPath = path.resolve(__dirname, "../tipsats-backend/config/payouts.json");
+  const raw = JSON.parse(readFileSync(configPath, "utf8")) as { payoutAddresses?: unknown };
+  const list = raw.payoutAddresses;
+  if (!Array.isArray(list) || list.length === 0) {
+    throw new Error("payouts.json: payoutAddresses must be a non-empty array");
+  }
+  for (const a of list) {
+    if (typeof a !== "string" || !/^0x[a-fA-F0-9]{40}$/.test(a)) {
+      throw new Error(`payouts.json: invalid address ${String(a)}`);
+    }
+  }
+  return list as string[];
+}
 
 const DRY_RUN = process.env.DRY_RUN !== "false";
 const RUMBLE_USER = process.env.RUMBLE_USER || "crypto_vib";
@@ -10,6 +31,8 @@ const TIP_AMOUNT_SATS = parseInt(process.env.TIP_AMOUNT_SATS || "0", 10);
 const TIP_AMOUNT_USD = parseFloat(process.env.TIP_AMOUNT_USD || "1.00");
 const WDK_SEED = process.env.WDK_SEED || "";
 const EXPECTED_ADDRESS = process.env.EXPECTED_ADDRESS || "";
+/** Override Boltz receive address (e.g. agent 4337 wallet instead of creator). */
+const BOLTZ_RECIPIENT = process.env.BOLTZ_RECIPIENT || "";
 /** On Railway/headless, Rumble's Cloudflare cannot be solved — use EXPECTED_ADDRESS only. */
 const SKIP_RUMBLE = process.env.SKIP_RUMBLE === "true";
 
@@ -84,13 +107,22 @@ async function main() {
       log(`  Address: ${creatorAddress}`);
     }
 
+    const payoutAddresses = loadPayoutAddressesFromConfig();
+    // Stable contract for tipsats-backend pipeline (prefer this list over re-reading config).
+    console.log(`Payout addresses: ${payoutAddresses.join(",")}`);
+
     // ── Step 4: Boltz swap → Lightning invoice ──
+    const boltzRecipient = BOLTZ_RECIPIENT || creatorAddress;
     const swapSats = TIP_AMOUNT_SATS > 0 ? TIP_AMOUNT_SATS : Math.round(TIP_AMOUNT_USD * 1500);
     logStep(4, `Creating Boltz swap: ${swapSats} sats → USDT...`);
+    if (BOLTZ_RECIPIENT) {
+      log(`  Boltz receive → agent address: ${BOLTZ_RECIPIENT}`);
+      log(`  Creator address for later payout: ${creatorAddress}`);
+    }
 
     const { swapId, bolt11, satsAmount, usdtAmount } = await createBoltzSwap(
       context,
-      creatorAddress,
+      boltzRecipient,
       swapSats,
       log
     );
@@ -103,7 +135,7 @@ async function main() {
     console.log("├─────────────────────────────────────────────────────┤");
     console.log(`│  Swap ID:  ${swapId}`);
     console.log(`│  Amount:   ~${satsAmount} sats (~${usdtAmount} USDT)`);
-    console.log(`│  To:       ${creatorAddress} (Polygon)`);
+    console.log(`│  To:       ${boltzRecipient} (Polygon)`);
     console.log(`│  Creator:  ${RUMBLE_USER}`);
     console.log("├─────────────────────────────────────────────────────┤");
     console.log(`│  ${bolt11}`);

@@ -74,9 +74,13 @@ export interface TxDetails {
   paymentId: string;
   creator: string;
   creatorAddress: string;
+  agentAddress: string;
   amountSats: string;
   amountUsdt: string;
   boltzUrl: string;
+  batchTxHash?: string;
+  /** Per-recipient USDT amounts when batch split is used */
+  payoutRecipients?: { address: string; amountUsdt: string }[];
 }
 
 export interface TipSession {

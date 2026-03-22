@@ -3,6 +3,7 @@ import express from "express";
 import cors from "cors";
 import walletRouter from "./routes/wallet.js";
 import tipRouter from "./routes/tip.js";
+import agentRouter from "./routes/agent.js";
 
 const app = express();
 const PORT = Number(process.env.PORT) || 8080;
@@ -34,6 +35,7 @@ app.get("/health", (_req, res) => {
 
 app.use("/api/wallet", walletRouter);
 app.use("/api/tip", tipRouter);
+app.use("/api/agent", agentRouter);
 
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`[TipSats Backend] Listening on http://0.0.0.0:${PORT}`);

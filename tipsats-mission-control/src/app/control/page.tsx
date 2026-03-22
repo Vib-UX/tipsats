@@ -455,10 +455,13 @@ export default function ControlPage() {
 
             <div className="space-y-3 rounded-xl border border-border bg-background p-4 font-mono text-sm">
               <Row label="Creator" value={session.txDetails.creator} />
-              <Row label="Address" value={session.txDetails.creatorAddress} mono />
+              <Row label="Creator Addr" value={session.txDetails.creatorAddress} mono />
+              {session.txDetails.agentAddress && (
+                <Row label="Agent Addr" value={session.txDetails.agentAddress} mono />
+              )}
               <Row label="Amount" value={`${session.txDetails.amountSats} sats (~${session.txDetails.amountUsdt} USDT)`} />
               <Row label="Swap ID" value={session.txDetails.swapId} />
-              <Row label="Payment ID" value={session.txDetails.paymentId} />
+              <Row label="LN Payment" value={session.txDetails.paymentId} />
               <Row label="Boltz Swap">
                 <a
                   href={session.txDetails.boltzUrl}
@@ -469,8 +472,32 @@ export default function ControlPage() {
                   View on Boltz
                 </a>
               </Row>
+              {session.txDetails.batchTxHash && (
+                <Row label="Batch Payout">
+                  <a
+                    href={`https://polygon.blockscout.com/tx/${session.txDetails.batchTxHash}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-emerald-400 hover:text-emerald-300 transition-colors"
+                  >
+                    View on Blockscout
+                  </a>
+                </Row>
+              )}
+              {session.txDetails.payoutRecipients &&
+                session.txDetails.payoutRecipients.length > 0 && (
+                  <Row label="Split (USDT)">
+                    <ul className="list-inside list-disc space-y-1 text-xs break-all">
+                      {session.txDetails.payoutRecipients.map((r) => (
+                        <li key={r.address}>
+                          {r.amountUsdt} → {r.address}
+                        </li>
+                      ))}
+                    </ul>
+                  </Row>
+                )}
               {blockscoutUrl && (
-                <Row label="Polygon Txns">
+                <Row label="Creator Txns">
                   <a
                     href={blockscoutUrl}
                     target="_blank"
@@ -576,5 +603,7 @@ function defaultSteps(): { name: string; status: "pending" | "running" | "done" 
     { name: "Lightning invoice ready", status: "pending" },
     { name: "Paying via Lightning", status: "pending" },
     { name: "Payment confirmed", status: "pending" },
+    { name: "USDT received by agent", status: "pending" },
+    { name: "Distributing to creators", status: "pending" },
   ];
 }

@@ -74,9 +74,12 @@ export interface TxDetails {
   paymentId: string;
   creator: string;
   creatorAddress: string;
+  agentAddress: string;
   amountSats: string;
   amountUsdt: string;
   boltzUrl: string;
+  batchTxHash?: string;
+  payoutRecipients?: { address: string; amountUsdt: string }[];
 }
 
 export interface TipSession {
