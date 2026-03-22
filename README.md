@@ -73,7 +73,7 @@ flowchart LR
 
 - **TWDK Spark invoice settlement** — Lightning payment settles in Spark when the pipeline pays the Boltz-issued bolt11 ([`payInvoice` flow](https://github.com/Vib-UX/tipsats/blob/main/tipsats-backend/src/lib/spark.ts)).
 
-  <img src="https://github.com/user-attachments/assets/340d6b8e-6669-4446-9035-7319e53101ac" alt="Spark Lightning invoice settlement" width="260" />
+  <img src="https://github.com/user-attachments/assets/340d6b8e-6669-4446-9035-7319e53101ac" alt="Spark Lightning invoice settlement" width="200" />
   <img src="https://github.com/user-attachments/assets/d8f9cd21-0370-4d98-bb5c-8e222918f275" alt="Spark payment flow" width="560" />
 
 - **TWDK ERC-4337 batch distribution to creators** — [Polygon transaction (Blockscout)](https://polygon.blockscout.com/tx/0xaf972c24b2fa32d8dfbd91a59ad168712d4deb1fbc517b6ec07a76ee21222f5a)
